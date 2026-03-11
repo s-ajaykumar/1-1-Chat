@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Chat App</title>
+
+<style>
+
+body{
+font-family:Arial;
+margin:0;
+background:#e5ddd5;
+}
+
+/* AUTH */
+
+.auth{
+width:350px;
+margin:120px auto;
+background:white;
+padding:30px;
+border-radius:8px;
+box-shadow:0 0 10px rgba(0,0,0,0.15);
+}
+
+.auth input{
+width:100%;
+padding:10px;
+margin-top:10px;
+border:1px solid #ccc;
+border-radius:4px;
+}
+
+.auth button{
+width:100%;
+padding:10px;
+margin-top:10px;
+background:#25d366;
+border:none;
+color:white;
+font-weight:bold;
+}
+
+.link{
+text-align:center;
+margin-top:10px;
+cursor:pointer;
+color:#128c7e;
+}
+
+/* CHAT */
+
+#chatApp{
+display:none;
+height:100vh;
+}
+
+.container{
+display:flex;
+height:100%;
+}
+
+.sidebar{
+width:30%;
+background:white;
+border-right:1px solid #ddd;
+display:flex;
+flex-direction:column;
+}
+
+.sidebar-header{
+padding:15px;
+background:#ededed;
+display:flex;
+justify-content:space-between;
+}
+
+.chat-item{
+padding:15px;
+border-bottom:1px solid #eee;
+cursor:pointer;
+}
+
+.chat-item:hover{
+background:#f5f5f5;
+}
+
+.chat-window{
+flex:1;
+display:flex;
+flex-direction:column;
+}
+
+.chat-header{
+padding:15px;
+background:#ededed;
+}
+
+.messages{
+flex:1;
+overflow:auto;
+padding:20px;
+}
+
+.message{
+margin-bottom:10px;
+}
+
+.self{
+text-align:right;
+}
+
+.bubble{
+display:inline-block;
+padding:10px;
+border-radius:8px;
+background:#dcf8c6;
+}
+
+.other .bubble{
+background:white;
+}
+
+.input-area{
+display:flex;
+padding:10px;
+background:#f0f0f0;
+}
+
+.input-area input{
+flex:1;
+padding:10px;
+border-radius:20px;
+border:1px solid #ccc;
+}
+
+.input-area button{
+margin-left:10px;
+background:#25d366;
+border:none;
+padding:10px 15px;
+color:white;
+border-radius:20px;
+}
+
+/* DIALOG */
+
+#dialog{
+position:fixed;
+top:0;
+left:0;
+width:100%;
+height:100%;
+background:rgba(0,0,0,0.4);
+display:none;
+align-items:center;
+justify-content:center;
+}
+
+.dialog-box{
+background:white;
+padding:25px;
+border-radius:6px;
+width:300px;
+text-align:center;
+}
+
+.dialog-box button{
+margin-top:15px;
+padding:8px 15px;
+background:#25d366;
+border:none;
+color:white;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="dialog">
+<div class="dialog-box">
+<div id="dialogText"></div>
+<button onclick="closeDialog()">OK</button>
+</div>
+</div>
+
+<!-- SIGNUP -->
+
+<div id="signupPage" class="auth">
+
+<h2>Signup</h2>
+
+<input id="signupEmail" placeholder="Email">
+<input id="signupUser" placeholder="Username">
+<input id="signupPass" type="password" placeholder="Password">
+
+<button onclick="signup()">Signup</button>
+
+<div id="otpBox" style="display:none">
+<input id="otpInput" placeholder="OTP">
+<button onclick="verifyOtp()">Verify OTP</button>
+</div>
+
+<div class="link" onclick="showLogin()">Login</div>
+
+</div>
+
+<!-- LOGIN -->
+
+<div id="loginPage" class="auth" style="display:none">
+
+<h2>Login</h2>
+
+<input id="loginEmail" placeholder="Email">
+<input id="loginPass" type="password" placeholder="Password">
+
+<button onclick="login()">Login</button>
+
+<div class="link" onclick="showSignup()">Signup</div>
+
+</div>
+
+<!-- CHAT -->
+
+<div id="chatApp">
+
+<div class="container">
+
+<div class="sidebar">
+
+<div class="sidebar-header">
+
+<b>Chats</b>
+
+<button onclick="newChat()">+</button>
+
+</div>
+
+<div id="chatList"></div>
+
+</div>
+
+<div class="chat-window">
+
+<div id="chatHeader" class="chat-header">Select Chat</div>
+
+<div id="messages" class="messages"></div>
+
+<div class="input-area">
+
+<input id="messageInput">
+
+<button onclick="sendMessage()">Send</button>
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+<script>
+
+const API="http://127.0.0.1:8000"
+
+let token=null
+let userId=null
+let currentConversation=null
+let poller=null
+
+/* DIALOG */
+
+function showDialog(msg){
+dialogText.innerText=msg
+dialog.style.display="flex"
+}
+
+function closeDialog(){
+dialog.style.display="none"
+}
+
+/* API REQUEST */
+
+async function apiRequest(url,options){
+
+try{
+
+let res=await fetch(API+url,options)
+
+let data=await res.json()
+
+if(!res.ok){
+showDialog(data.detail || "Error")
+return null
+}
+
+return data
+
+}catch(e){
+showDialog("Server error")
+return null
+}
+
+}
+
+/* TOKEN */
+
+function decodeToken(token){
+let payload=JSON.parse(atob(token.split('.')[1]))
+return payload.user_id
+}
+
+/* PAGE SWITCH */
+
+function showLogin(){
+signupPage.style.display="none"
+loginPage.style.display="block"
+}
+
+function showSignup(){
+loginPage.style.display="none"
+signupPage.style.display="block"
+}
+
+/* SIGNUP */
+
+async function signup(){
+
+let data=await apiRequest("/signup",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({
+email:signupEmail.value,
+username:signupUser.value,
+password:signupPass.value
+})
+})
+
+if(!data) return
+
+showDialog("OTP sent")
+otpBox.style.display="block"
+
+}
+
+/* VERIFY OTP */
+
+async function verifyOtp(){
+
+let data=await apiRequest("/verify-otp",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({
+email:signupEmail.value,
+otp:otpInput.value
+})
+})
+
+if(!data) return
+
+showDialog("Account verified")
+showLogin()
+
+}
+
+/* LOGIN */
+
+async function login(){
+
+let data=await apiRequest("/login",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({
+email:loginEmail.value,
+password:loginPass.value
+})
+})
+
+if(!data) return
+
+token=data.access_token
+userId=decodeToken(token)
+
+signupPage.style.display="none"
+loginPage.style.display="none"
+chatApp.style.display="block"
+
+loadChats()
+
+}
+
+/* LOAD CHATS */
+
+async function loadChats(){
+
+chatList.innerHTML=""
+
+let chats=await apiRequest("/users/"+userId+"/conversations")
+
+if(!chats) return
+
+chats.forEach(c=>{
+
+let div=document.createElement("div")
+
+div.className="chat-item"
+
+div.innerText="Conversation "+c.conversation_id
+
+div.onclick=()=>openChat(c.conversation_id)
+
+chatList.appendChild(div)
+
+})
+
+}
+
+/* OPEN CHAT */
+
+async function openChat(id){
+
+currentConversation=id
+
+loadMessages()
+
+if(poller) clearInterval(poller)
+
+poller=setInterval(loadMessages,2000)
+
+}
+
+/* LOAD MESSAGES */
+
+async function loadMessages(){
+
+let data=await apiRequest("/messages/"+currentConversation)
+
+if(!data) return
+
+messages.innerHTML=""
+
+data.forEach(m=>addMessage(m))
+
+}
+
+/* ADD MESSAGE */
+
+function addMessage(m){
+
+let div=document.createElement("div")
+
+div.className="message "+(m.sender_id==userId?"self":"other")
+
+div.innerHTML="<div class='bubble'>"+m.content+"</div>"
+
+messages.appendChild(div)
+
+messages.scrollTop=messages.scrollHeight
+
+}
+
+/* SEND MESSAGE */
+
+async function sendMessage(){
+
+let text=messageInput.value.trim()
+
+if(!text){
+showDialog("Message cannot be empty")
+return
+}
+
+messageInput.value=""
+
+let data=await apiRequest("/messages",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({
+conversation_id:currentConversation,
+sender_id:userId,
+content:text
+})
+})
+
+if(!data) return
+
+addMessage({
+sender_id:userId,
+content:text
+})
+
+}
+
+/* NEW CHAT USING EMAIL */
+
+async function newChat(){
+
+let email=prompt("Enter user email")
+
+if(!email) return
+
+let user=await apiRequest("/users/by-email/"+email)
+
+if(!user) return
+
+if(user.id==userId){
+showDialog("You cannot chat with yourself")
+return
+}
+
+let data=await apiRequest("/conversations",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({
+user1_id:userId,
+user2_id:user.id
+})
+})
+
+if(!data) return
+
+showDialog("Conversation created")
+
+loadChats()
+
+}
+
+</script>
+
+</body>
+</html>
