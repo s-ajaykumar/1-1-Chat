@@ -1,22 +1,13 @@
-from passlib.context import CryptContext
-from jose import jwt
 from datetime import datetime, timedelta
 
+from jose import jwt
+import bcrypt
 import os
 
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-pwd_context = CryptContext(schemes=["bcrypt"])
-
-
-import bcrypt
-import os
-from jose import jwt
-from datetime import datetime, timedelta
-
-# ... keep your ALGORITHM and other settings ...
 
 def hash_password(password: str):
     pwd_bytes = password.encode('utf-8')
