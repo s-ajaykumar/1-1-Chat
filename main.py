@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -22,12 +22,45 @@ app.add_middleware(
 )
 
 
+
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
+
+     
+class ConnectionManager:
+
+    def __init__(self):
+        self.active_connections = {}
+
+    async def connect(self, user_id: int, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections[user_id] = websocket
+
+    def disconnect(self, user_id: int):
+        if user_id in self.active_connections:
+            del self.active_connections[user_id]
+
+    async def send_to_user(self, user_id: int, message: dict):
+        if user_id in self.active_connections:
+            await self.active_connections[user_id].send_json(message)
+
+manager = ConnectionManager()
+   
+
+
+@app.websocket("/ws/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, user_id: int):
+    await manager.connect(user_id, websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(user_id)
 
 
 @app.post("/signup")
@@ -106,17 +139,26 @@ def create_conversation(
     )
 
 
-@app.post("/messages", response_model=schemas.MessageOut)
-def send_message(
-    message: schemas.MessageCreate,
-    session: Session = Depends(get_db)
-):
-    return crud.create_message(
+@app.post("/messages")
+async def send_message(data: schemas.MessageCreate, session: Session = Depends(get_db)):
+    message = crud.create_message(
         session,
-        message.conversation_id,
-        message.sender_id,
-        message.content
+        data.conversation_id,
+        data.sender_id,
+        data.content
     )
+    participants = session.query(models.ConversationParticipant)\
+        .filter(models.ConversationParticipant.conversation_id == data.conversation_id)\
+        .all()
+
+    for p in participants:
+        if p.user_id != data.sender_id:
+            await manager.send_to_user(p.user_id, {
+                "conversation_id": data.conversation_id,
+                "sender_id": data.sender_id,
+                "content": data.content
+            })
+    return message
 
 
 @app.get("/messages/{conversation_id}", response_model=list[schemas.MessageOut])

@@ -265,10 +265,10 @@ color:white;
 
 const API="http://127.0.0.1:8000"
 
+let socket=null
 let token=null
 let userId=null
 let currentConversation=null
-let poller=null
 
 /* DIALOG */
 
@@ -369,6 +369,7 @@ showLogin()
 
 async function login(){
 
+let socket=null
 let data=await apiRequest("/login",{
 method:"POST",
 headers:{"Content-Type":"application/json"},
@@ -382,6 +383,18 @@ if(!data) return
 
 token=data.access_token
 userId=decodeToken(token)
+
+socket = new WebSocket("ws://127.0.0.1:8000/ws/"+userId)
+
+socket.onmessage = function(event){
+
+let msg = JSON.parse(event.data)
+
+if(msg.conversation_id == currentConversation){
+    addMessage(msg)
+}
+
+}
 
 signupPage.style.display="none"
 loginPage.style.display="none"
@@ -423,11 +436,13 @@ async function openChat(id){
 
 currentConversation=id
 
-loadMessages()
+messages.innerHTML=""
 
-if(poller) clearInterval(poller)
+let data=await apiRequest("/messages/"+id)
 
-poller=setInterval(loadMessages,2000)
+if(!data) return
+
+data.forEach(m=>addMessage(m))
 
 }
 
